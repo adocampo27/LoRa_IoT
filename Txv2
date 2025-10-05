@@ -1,0 +1,84 @@
+#include "Arduino.h"
+#include "LoRaWan_APP.h"
+#include <Wire.h>
+#include <BH1750.h>
+#include <DHT.h>
+
+// -----------------------------------
+// Pines y sensores
+// -----------------------------------
+#define DHTPIN GPIO5
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+BH1750 lightMeter;
+
+// -----------------------------------
+// Variables de sensor
+// -----------------------------------
+float lux = 0;
+float temp = 0;
+float hum = 0;
+
+// -----------------------------------
+// LoRa configuración
+// -----------------------------------
+#define RF_FREQUENCY 915000000
+#define TX_OUTPUT_POWER 20
+#define LORA_BANDWIDTH 0
+#define LORA_SPREADING_FACTOR 7
+#define LORA_CODINGRATE 1
+#define LORA_PREAMBLE_LENGTH 8
+#define LORA_FIX_LENGTH_PAYLOAD_ON false
+#define LORA_IQ_INVERSION_ON false
+#define BUFFER_SIZE 100
+
+char txpacket[BUFFER_SIZE];
+static RadioEvents_t RadioEvents;
+
+// -----------------------------------
+// Setup
+// -----------------------------------
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Iniciando CubeCell con BH1750 y DHT11...");
+
+  // Inicializar sensores
+  Wire.begin(); // Pines por defecto SDA=GPIO4, SCL=GPIO5
+  lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
+  dht.begin();
+
+  // Inicializar LoRa
+  Radio.Init(&RadioEvents);
+  Radio.SetChannel(RF_FREQUENCY);
+  Radio.SetTxConfig(MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
+                    LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+                    LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
+                    true, 0, 0, LORA_IQ_INVERSION_ON, 3000);
+
+  Serial.println("Listo para enviar datos por LoRa");
+}
+
+// -----------------------------------
+// Loop
+// -----------------------------------
+void loop() {
+  lux = lightMeter.readLightLevel();
+  temp = dht.readTemperature();
+  hum = dht.readHumidity();
+
+  if (isnan(lux)) lux = -1;
+  if (isnan(temp)) temp = -1;
+  if (isnan(hum)) hum = -1;
+
+  // Construir mensaje
+  String msg = "LUX:" + String(lux, 1) + ",TEMP:" + String(temp, 1) + ",HUM:" + String(hum, 1);
+  msg.toCharArray(txpacket, BUFFER_SIZE);
+
+  // Enviar
+  Radio.Send((uint8_t*)txpacket, strlen(txpacket));
+  Serial.println("Enviado LoRa: " + msg);
+
+  delay(15000); // Enviar cada 15 segundos
+}
